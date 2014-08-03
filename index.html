@@ -6,9 +6,10 @@
     <link type="text/css" rel="stylesheet" href="style/main.css" />
 </head>
 <body>
-<canvas></canvas>
-<div id="layer-2">
-    <div id="center">Disco</div>
+<div id="container">
+    <canvas></canvas>
+    <div id="layer-2">
+    </div>
 </div>
 
 <!-- IDENTITY -->
@@ -22,8 +23,29 @@
   }
 </script>
 
-<script id="shader-final" type="x-shader/x-fragment">
-  precision mediump float;
+<script id="shader-init" type="x-shader/x-fragment" data-out="carrier1">
+  precision highp float;
+  varying highp vec2 p;
+
+  void main(void) {
+    float x = p.x - 0.5;
+    float y = p.y - 0.5;
+    gl_FragColor = x * x + y * y > 0.0049 ? vec4( 1. ) : vec4( vec3( 0. ), 1. );
+  }
+</script>
+
+<script id="shader-test" type="x-shader/x-fragment" data-in="velocity" data-out="screen">
+  precision highp float;
+  varying highp vec2 p;
+  uniform sampler2D velocity;
+
+  void main(void) {
+    gl_FragColor = texture2D( velocity, p );
+  }
+</script>
+
+<script id="shader-final" type="x-shader/x-fragment" data-in="carrier1" data-out="screen">
+  precision highp float;
   varying highp vec2 p;
   uniform sampler2D carrier1;
 
@@ -33,144 +55,118 @@
 </script>
 
 <script id="shader-advect" type="x-shader/x-fragment" data-in="velocity,carrier1" data-out="carrier2">
-  precision mediump float;
+  precision highp float;
   varying highp vec2 p;
   uniform sampler2D velocity;
   uniform sampler2D carrier1;
 
   void main(void) {
-    vec2 source = p - texture2D( velocity, p ).xy * 0.5;
-    gl_FragColor = vec4( texture2D( carrier1, source ).xy, 0.0, 1.0 );
+    vec2 source = p - ( texture2D( velocity, p ).xy - vec2( 0.5 ) ) * ( 1. / 32. );
+    gl_FragColor = texture2D( carrier1, source );
   }
 </script>
 
-<script id="shader-advect-inverse" type="x-shader/x-fragment" data-in="velocity,carrier2" data-out="carrier1">
-  precision mediump float;
+<script id="shader-copy-advect" type="x-shader/x-fragment" data-in="carrier2" data-out="carrier1">
+  precision highp float;
   varying highp vec2 p;
-  uniform sampler2D velocity;
   uniform sampler2D carrier2;
 
   void main(void) {
-    vec2 source = p - texture2D( velocity, p ).xy * 0.5;
-    gl_FragColor = vec4( texture2D( carrier2, source ).xy, 0.0, 1.0 );
+      gl_FragColor = texture2D( carrier2, p );
   }
 </script>
 
 <script id="shader-advect-velocity" type="x-shader/x-fragment" data-in="velocity" data-out="tempcanv">
-  precision mediump float;
+  precision highp float;
   varying highp vec2 p;
   uniform sampler2D velocity;
   uniform sampler2D tempcanv;
 
   void main(void) {
-    vec2 source = p - ( texture2D( velocity, p ).xy - vec2( 0.5 ) ) * 0.1;
+    vec2 source = p - ( texture2D( velocity, p ).xy - vec2( 0.5 ) ) * ( 1. / 32. );
     gl_FragColor = vec4( texture2D( velocity, source ).xy, 0.0, 1.0 );
   }
 </script>
 
-<!-- VELOCITY -> ALPHA -> BETA -> VELOCITY -->
-<script id="shader-jacobi" type="x-shader/x-fragment" data-in="tempcanv,alpha,beta" data-out="velocity">
-  precision mediump float;
+<script id="shader-jacobi" type="x-shader/x-fragment" data-in="tempcanv" data-out="velocity">
+  precision highp float;
   varying highp vec2 p;
   uniform sampler2D tempcanv;
-  uniform float alpha;
-  uniform float beta;
 
   void main( void ) {
-    float pp = 1. / 256.;
-    vec2 l = vec2( 0.0 );
-    vec2 r = vec2( 0.0 );
-    vec2 u = vec2( 0.0 );
-    vec2 d = vec2( 0.0 );
-    for( int j = 0; j < 4; j++ ) {
-      float i = float( j );
-      l += texture2D( tempcanv, p + vec2( -pp,  0. ) * i ).xy * 0.25;
-      r += texture2D( tempcanv, p + vec2( +pp,  0. ) * i ).xy * 0.25;
-      u += texture2D( tempcanv, p + vec2(  0., -pp ) * i ).xy * 0.25;
-      d += texture2D( tempcanv, p + vec2(  0., +pp ) * i ).xy * 0.25;
-    }
+    float pp = 1. / 512.;
+    vec2 l = texture2D( tempcanv, p + vec2( - pp,   0. ) ).xy;
+    vec2 r = texture2D( tempcanv, p + vec2( + pp,   0. ) ).xy;
+    vec2 u = texture2D( tempcanv, p + vec2(   0., - pp ) ).xy;
+    vec2 d = texture2D( tempcanv, p + vec2(   0., + pp ) ).xy;
     vec2 c = texture2D( tempcanv, p ).xy;
-    gl_FragColor = vec4( ( l + r + d + u ) * ( 1. / 4.), 0.0, 1.0 );
+    gl_FragColor = vec4( ( l + r + d + u + c ) * 0.2, 0.0, 1.0 );
   }
 </script>
 
-<script id="shader-inverse-jacobi" type="x-shader/x-fragment" data-in="velocity,alpha,beta" data-out="tempcanv">
-  precision mediump float;
-  varying highp vec2 p;
-  uniform sampler2D velocity;
-  uniform float alpha;
-  uniform float beta;
+<script id="shader-copy-jacobi" type="x-shader/x-fragment" data-in="velocity" data-out="tempcanv">
+precision highp float;
+varying highp vec2 p;
+uniform sampler2D velocity;
+uniform sampler2D carrier1;
 
-  void main( void ) {
-    float pp = 1. / 256.;
-    vec2 l = vec2( 0.0 );
-    vec2 r = vec2( 0.0 );
-    vec2 u = vec2( 0.0 );
-    vec2 d = vec2( 0.0 );
-    for( int j = 0; j < 4; j++ ) {
-      float i = float( j );
-      l += texture2D( velocity, p + vec2( -pp,  0. ) * i ).xy * 0.25;
-      r += texture2D( velocity, p + vec2( +pp,  0. ) * i ).xy * 0.25;
-      u += texture2D( velocity, p + vec2(  0., -pp ) * i ).xy * 0.25;
-      d += texture2D( velocity, p + vec2(  0., +pp ) * i ).xy * 0.25;
-    }
-    vec2 c = texture2D( velocity, p ).xy;
-    gl_FragColor = vec4( ( l + r + d + u ) * ( 1. / 4. ), 0.0, 1.0 );
-  }
+void main(void) {
+    gl_FragColor = texture2D( velocity, p );
+}
 </script>
 
-<!-- VELOCITY -> MOUSE -> LAST -> VELOCITY -->
 <script id="shader-input" type="x-shader/x-fragment" data-in="velocity,mouse,last" data-out="tempcanv">
-  precision mediump float;
+  precision highp float;
   varying highp vec2 p;
   uniform sampler2D velocity;
   uniform vec2 mouse;
   uniform vec2 last;
 
   void main( void ) {
-    float d = max( length( last - p ) * 25., 1.0 );
+    float d = max( length( last - p ) * 64., 1.0 );
     vec2 i = ( 1. / pow( d, 16. ) ) * mouse * 15.;
     gl_FragColor = vec4( texture2D( velocity, p ).xy + i, 0.0, 1.0 );
   }
 </script>
 
-<!-- VELOCITY -> PRESSURE -->
 <script id="shader-divergence" type="x-shader/x-fragment" data-in="tempcanv" data-out="pressure">
-  precision mediump float;
+  precision highp float;
   varying highp vec2 p;
   uniform sampler2D tempcanv;
 
   void main( void ) {
-    float pp = 1. / 256.;
-    vec2 l = texture2D( tempcanv, p + vec2( -pp,  0. ) ).xy - vec2( 0.5 );
-    vec2 r = texture2D( tempcanv, p + vec2( +pp,  0. ) ).xy - vec2( 0.5 );
-    vec2 u = texture2D( tempcanv, p + vec2(  0., -pp ) ).xy - vec2( 0.5 );
-    vec2 d = texture2D( tempcanv, p + vec2(  0., +pp ) ).xy - vec2( 0.5 );
+    float pp = 1. / 512.;
+    vec2 l = texture2D( tempcanv, p + vec2( -pp,  0. ) ).xy;
+    vec2 r = texture2D( tempcanv, p + vec2( +pp,  0. ) ).xy;
+    vec2 u = texture2D( tempcanv, p + vec2(  0., -pp ) ).xy;
+    vec2 d = texture2D( tempcanv, p + vec2(  0., +pp ) ).xy;
 
-    gl_FragColor = vec4( ( r.x - l.x ) + ( u.y - d.y ) + 0.5, 0., 0., 1.0 );
+    float pressure = ( r.x - l.x ) + ( u.y - d.y );
+    gl_FragColor = vec4( pressure * pp, 0., 0., 1.0 );
   }
 </script>
 
-<!-- PRESSURE -> VELOCITY -> VELOCITY -->
 <script id="shader-gradient" type="x-shader/x-fragment" data-in="tempcanv,pressure" data-out="velocity">
-  precision mediump float;
+  precision highp float;
   varying highp vec2 p;
   uniform sampler2D tempcanv;
   uniform sampler2D pressure;
 
   void main( void ) {
-    float pp = 1. / 256.;
+    float pp = 1. / 512.;
     float l = texture2D( pressure, p + vec2( -pp,  0. ) ).x;
     float r = texture2D( pressure, p + vec2( +pp,  0. ) ).x;
     float u = texture2D( pressure, p + vec2(  0., -pp ) ).x;
     float d = texture2D( pressure, p + vec2(  0., +pp ) ).x;
 
-    gl_FragColor = vec4( texture2D( tempcanv, p ).xy - vec2( r - l, u - d ), 0.0, 1.0 );
+    vec2 v = texture2D( tempcanv, p ).xy;
+    vec2 g = vec2( r - l, u - d ) * pp;
+    gl_FragColor = vec4( v - g, 0.0, 1.0 );
   }
 </script>
 
 <script id="shader-boundary" type="x-shader/x-fragment">
-  precision mediump float;
+  precision highp float;
   varying highp vec2 p;
   uniform vec4 c;
 

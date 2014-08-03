@@ -12,22 +12,25 @@ a {
     color: inherit;
 }
 
+body {
+    background-color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#container, #layer-2 {
+    width: 100vh;
+    height: 100vh;
+}
+
 canvas {
-    width: 100%;
+    position: absolute;
     height: 100%;
 }
 
 #layer-2 {
     position: absolute;
-    width: 100%;
-    height: 100%;
-
-    left: 0;
-    top: 0;
-    color: white;
-    border: 1px solid red;
-
-    display: flex;
 }
 
 #center {

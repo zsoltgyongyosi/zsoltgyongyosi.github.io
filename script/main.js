@@ -2,28 +2,21 @@
     'use strict';
 
     var vPlane = [
-        1.0,  1.0, 0.0,
-        0.0,  1.0, 0.0,
-        1.0,  0.0, 0.0,
-        0.0,  0.0, 0.0
+        1.0, 1.0, 0.0,
+        0.0, 1.0, 0.0,
+        1.0, 0.0, 0.0,
+        0.0, 0.0, 0.0
     ];
 
     var vLines = [
-        0.0,  0.0, 0.0,
-        1.0,  0.0, 0.0,
-
-        1.0,  0.0, 0.0,
-        1.0,  1.0, 0.0,
-
-        1.0,  1.0, 0.0,
-        0.0,  1.0, 0.0,
-
-        0.0,  1.0, 0.0,
-        0.0,  0.0, 0.0
+        0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+        1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
+        1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+        0.0, 1.0, 0.0, 0.0, 0.0, 0.0
     ];
 
     var canvas = document.getElementsByTagName('canvas')[0];
-    var w = [ 256, 256 ];
+    var w = [ 512, 512 ];
 
     canvas.width = w[0];
     canvas.height = w[1];
@@ -39,11 +32,11 @@
     function Texture( sz ) {
         var tex = gl.createTexture();
         gl.bindTexture( gl.TEXTURE_2D, tex );
-        gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST );
-        gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST );
+        gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
+        gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
 
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE );
+        gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE );
 
         gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA, sz[0], sz[1], 0, gl.RGBA, gl.UNSIGNED_BYTE, null );
         this.tex = tex;
@@ -213,9 +206,13 @@
         var script = document.getElementById( scriptId );
 
         var dataset = script.dataset;
-        this.in = _( dataset['in'].split(',') ).map( function( x ) {
-            return [ program.uniform( x ), vocabulary[ x ] ];
-        } );
+        if( 'in' in dataset ) {
+            this.in = _( dataset['in'].split(',') ).map( function( x ) {
+                return [ program.uniform( x ), vocabulary[ x ] ];
+            } );
+        } else {
+            this.in = [];
+        }
         this.out = vocabulary[ dataset['out'] ];
 
         this.name = name;
@@ -248,7 +245,11 @@
             }
         } );
 
-        fb.target( this.out() );
+        if( this.out() ) {
+            fb.target( this.out() );
+        } else {
+            gl.bindFramebuffer( gl.FRAMEBUFFER, null );
+        }
 
         gl.drawArrays( gl.TRIANGLE_STRIP, 0, 4 );
     };
@@ -269,17 +270,28 @@
     var last = [ 0, 0 ];
     var mouse = [ 0, 0 ];
 
-    document.addEventListener( 'mousemove', function( e ) {
-        var x =     ( e.clientX || e.pageX ) / window.innerWidth;
-        var y = 1 - ( e.clientY || e.pageY ) / window.innerHeight;
+    var active = false;
+    var timeout;
+    var layer2 = document.getElementById('layer-2');
+    layer2.addEventListener( 'mousemove', function( e ) {
+        clearTimeout( timeout );
+
+        var target = e.target || e.srcElement,
+            rect = target.getBoundingClientRect(),
+            offsetX = e.clientX - rect.left,
+            offsetY = e.clientY - rect.top;
+
+        var x =     offsetX / rect.height;
+        var y = 1 - offsetY / rect.width;
+        var dx = x - 0.5;
+        var dy = y - 0.5;
+        if( dx * dx + dy * dy < 0.006 ) active = true;
         mouse[0] = x - last[0];
         mouse[1] = y - last[1];
         last[0] = x;
         last[1] = y;
+        timeout = setTimeout( function() { mouse = [ 0, 0 ]; }, 25 );
     }, false );
-
-    mouse[0] *= 0.9;
-    mouse[1] *= 0.9;
 
     var vocab = {
         velocity: function() { return velocity; },
@@ -289,8 +301,7 @@
         carrier2: function() { return carrier2; },
         mouse:    function() { return mouse; },
         last:     function() { return last; },
-        alpha:    function() { return 0.995; },
-        beta:     function() { return ( 4 + 0.995 ) / 25.; }
+        screen:   function() { return null; }
     };
 
     var fb = new Framebuffer();
@@ -313,22 +324,23 @@
 
     var passes = [];
 
-    passes.push( 'advect' );
-    passes.push( 'advect-inverse' );
+    var passAdvect = new NavierStokesPass( 'advect', vocab );
+    var passCopyAdvect = new NavierStokesPass( 'copy-advect', vocab );
+    var passAdvectVelocity = new NavierStokesPass( 'advect-velocity', vocab );
 
-    passes.push( 'advect-velocity' );
-    passes.push( 'jacobi' );
-    for( var i = 0; i < 20; i++ ) {
-        passes.push( 'inverse-jacobi' );
-        passes.push( 'jacobi' );
-    }
-    passes.push( 'input' );
-    passes.push( 'divergence' );
-    passes.push( 'gradient' );
+    var passJacobi = new NavierStokesPass( 'jacobi', vocab );
+    var passCopyJacobi = new NavierStokesPass( 'copy-jacobi', vocab );
+
+    var passInput = new NavierStokesPass( 'input', vocab );
+    var passDivergence = new NavierStokesPass( 'divergence', vocab );
+    var passGradient = new NavierStokesPass( 'gradient', vocab );
 
     var job = _.map( passes, function( x ) {
         return new NavierStokesPass( x, vocab );
     } );
+
+    var passInitial = new NavierStokesPass( 'init', vocab );
+    var passFinal = new NavierStokesPass( 'final', vocab );
 
     gl.bindBuffer( gl.ARRAY_BUFFER, vboPlane );
     gl.vertexAttribPointer( pBoundary.attrib('v'), 3, gl.FLOAT, false, 0, 0 );
@@ -342,15 +354,27 @@
     fb.target( vocab['pressure']() );
     gl.drawArrays( gl.TRIANGLE_STRIP, 0, 4 );
 
+    passInitial.use( fb, vboPlane );
+
+    var fps = 0;
+    var renderStart = new Date().getTime();
     var render = function() {
         requestAnimationFrame( render );
 
-        _( job ).each( function( pass ) {
-            pass.use( fb, vboPlane );
-        } );
+        if( active ) {
+            passAdvect.use( fb, vboPlane );
+            passCopyAdvect.use( fb, vboPlane );
+            passAdvectVelocity.use( fb, vboPlane );
+            for( var i = 0; i < Math.min( 90, Math.max( 20, fps * 2 - 60 ) ); i++ ) {
+                passJacobi.use( fb, vboPlane );
+                passCopyJacobi.use( fb, vboPlane );
+            }
+            passInput.use( fb, vboPlane );
+            passDivergence.use( fb, vboPlane );
+            passGradient.use( fb, vboPlane );
+        }
 
-        gl.bindFramebuffer( gl.FRAMEBUFFER, null );
-        gl.drawArrays( gl.TRIANGLE_STRIP, 0, 4 );
+        passFinal.use( fb, vboPlane );
 
         pBoundary.use();
         gl.uniform4f( uBoundary, 0.5, 0.5, 0.5, 1.0 );
@@ -363,6 +387,10 @@
 
         fb.target( vocab['pressure']() );
         gl.drawArrays( gl.LINES, 0, 4 );
+
+        var elapsed = Math.max( 0.1, new Date().getTime() - renderStart );
+        fps = fps * 0.95 + ( 1000 / elapsed ) * 0.05;
+        renderStart = new Date().getTime();
     };
     render();
 
