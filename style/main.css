@@ -14,25 +14,33 @@ a {
 
 body {
     background-color: white;
+}
+
+canvas, #layer-2 {
+    position: absolute;
+    width: 100vmax;
+    height: 100vmax;
+    top: 50%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-50%);
+}
+
+#layer-2 {
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-#container, #layer-2 {
-    width: 100vh;
-    height: 100vh;
+#info {
+    width: 53%;
+    height: 8%;
 }
 
-canvas {
-    position: absolute;
-    height: 100%;
+#container {
+    opacity: 0;
+    transition: opacity ease-in 0.5s;
 }
 
-#layer-2 {
-    position: absolute;
-}
-
-#center {
-    margin: auto;
+#container.visible {
+    opacity: 1;
 }

@@ -1,11 +1,13 @@
 (function(){
     'use strict';
 
+    var start = Date.now();
+
     var vPlane = [
-        1.0, 1.0, 0.0,
-        0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0,
         1.0, 0.0, 0.0,
-        0.0, 0.0, 0.0
+        0.0, 1.0, 0.0,
+        1.0, 1.0, 0.0,
     ];
 
     var vLines = [
@@ -16,7 +18,7 @@
     ];
 
     var canvas = document.getElementsByTagName('canvas')[0];
-    var w = [ 512, 512 ];
+    var w = [ 1920, 1920 ];
 
     canvas.width = w[0];
     canvas.height = w[1];
@@ -27,20 +29,35 @@
 
     /**
      * @param {Number[]} sz vec2
+     * @param {string?} source
      * @constructor
      */
-    function Texture( sz ) {
+    function Texture(sz, id, source) {
+        this.id = id;
+
         var tex = gl.createTexture();
-        gl.bindTexture( gl.TEXTURE_2D, tex );
-        gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR );
-        gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR );
+        gl.activeTexture(this.id);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 
-        gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE );
-        gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE );
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-        gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA, sz[0], sz[1], 0, gl.RGBA, gl.UNSIGNED_BYTE, null );
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, sz[0], sz[1], 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+        if (source) {
+            const image = new Image();
+            image.onload = () => {
+                gl.activeTexture(this.id);
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            };
+            image.src = source;
+        }
+
         this.tex = tex;
-        this.id = null;
+        this.source = source;
     }
 
     /**
@@ -51,20 +68,12 @@
     };
 
     /**
-     * @param {Number} id
-     */
-    Texture.prototype.setSlot = function( id ) {
-        this.id = id;
-        gl.activeTexture( this.id );
-        gl.bindTexture( gl.TEXTURE_2D, this.tex );
-    };
-
-    /**
      * @param {WebGLUniformLocation} uniform
      */
     Texture.prototype.assignUniform = function( uniform ) {
-        if( this.id === null ) throw new Error('No slot assigned.');
-        gl.uniform1i( uniform, this.id - gl.TEXTURE0 );
+        if (this.id === null) throw new Error('No slot assigned.');
+        if (this.source) gl.activeTexture(this.id);
+        gl.uniform1i(uniform, this.id - gl.TEXTURE0);
     };
 
     /**
@@ -108,7 +117,7 @@
         var source = '';
         var k = shaderScript.firstChild;
         while( k ) {
-            if( k.nodeType == 3 ) source += k.textContent;
+            if( k.nodeType === 3 ) source += k.textContent;
             k = k.nextSibling;
         }
 
@@ -255,17 +264,12 @@
     };
 
 
-    var velocity = new Texture( w );
-    var pressure = new Texture( w );
-    var tempcanv = new Texture( w );
-    var carrier1 = new Texture( w );
-    var carrier2 = new Texture( w );
-
-    velocity.setSlot( gl.TEXTURE0 );
-    pressure.setSlot( gl.TEXTURE1 );
-    tempcanv.setSlot( gl.TEXTURE2 );
-    carrier1.setSlot( gl.TEXTURE3 );
-    carrier2.setSlot( gl.TEXTURE4 );
+    const velocity = new Texture(w, gl.TEXTURE0);
+    const pressure = new Texture(w, gl.TEXTURE1);
+    const tempcanv = new Texture(w, gl.TEXTURE2);
+    const carrier1 = new Texture(w, gl.TEXTURE3);
+    const carrier2 = new Texture(w, gl.TEXTURE4);
+    const initial  = new Texture(w, gl.TEXTURE5, 'zsgy.png');
 
     var last = [ 0, 0 ];
     var mouse = [ 0, 0 ];
@@ -276,16 +280,13 @@
     layer2.addEventListener( 'mousemove', function( e ) {
         clearTimeout( timeout );
 
-        var target = e.target || e.srcElement,
-            rect = target.getBoundingClientRect(),
-            offsetX = e.clientX - rect.left,
-            offsetY = e.clientY - rect.top;
+        const rect = layer2.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        const offsetY = e.clientY - rect.top;
 
-        var x =     offsetX / rect.height;
-        var y = 1 - offsetY / rect.width;
-        var dx = x - 0.5;
-        var dy = y - 0.5;
-        if( dx * dx + dy * dy < 0.006 ) active = true;
+        const x =     offsetX / rect.height;
+        const y = 1 - offsetY / rect.width;
+
         mouse[0] = x - last[0];
         mouse[1] = y - last[1];
         last[0] = x;
@@ -293,14 +294,19 @@
         timeout = setTimeout( function() { mouse = [ 0, 0 ]; }, 25 );
     }, false );
 
+    const info = document.getElementById('info');
+    info.addEventListener('mousemove', () => active = true);
+
     var vocab = {
         velocity: function() { return velocity; },
         pressure: function() { return pressure; },
         tempcanv: function() { return tempcanv; },
         carrier1: function() { return carrier1; },
         carrier2: function() { return carrier2; },
+        initial:  function() { return initial; },
         mouse:    function() { return mouse; },
         last:     function() { return last; },
+        time:     function() { return (Date.now() - start) / 1000; },
         screen:   function() { return null; }
     };
 
@@ -354,8 +360,6 @@
     fb.target( vocab['pressure']() );
     gl.drawArrays( gl.TRIANGLE_STRIP, 0, 4 );
 
-    passInitial.use( fb, vboPlane );
-
     var fps = 0;
     var renderStart = new Date().getTime();
     var render = function() {
@@ -365,7 +369,7 @@
             passAdvect.use( fb, vboPlane );
             passCopyAdvect.use( fb, vboPlane );
             passAdvectVelocity.use( fb, vboPlane );
-            for( var i = 0; i < Math.min( 90, Math.max( 20, fps * 2 - 60 ) ); i++ ) {
+            for( var i = 0; i < 2; i++ ) {
                 passJacobi.use( fb, vboPlane );
                 passCopyJacobi.use( fb, vboPlane );
             }
@@ -377,9 +381,9 @@
         passFinal.use( fb, vboPlane );
 
         pBoundary.use();
-        gl.uniform4f( uBoundary, 0.5, 0.5, 0.5, 1.0 );
+        gl.uniform4f( uBoundary, .5, .5, .0, 1. );
 
-        gl.lineWidth( 10 );
+        gl.lineWidth( 64 );
         gl.bindBuffer( gl.ARRAY_BUFFER, vboLines );
 
         fb.target( vocab['velocity']() );
@@ -392,6 +396,11 @@
         fps = fps * 0.95 + ( 1000 / elapsed ) * 0.05;
         renderStart = new Date().getTime();
     };
-    render();
+
+    window.onload = () => {
+        document.getElementById('container').classList.add('visible');
+        passInitial.use( fb, vboPlane );
+        render();
+    };
 
 })();
