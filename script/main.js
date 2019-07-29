@@ -1,34 +1,36 @@
 (function(){
     'use strict';
 
-    var start = Date.now();
+    const start = Date.now();
 
-    var vPlane = [
+    const vPlane = [
         0.0, 0.0, 0.0,
         1.0, 0.0, 0.0,
         0.0, 1.0, 0.0,
         1.0, 1.0, 0.0,
     ];
 
-    var vLines = [
+    const vLines = [
         0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
         1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
         1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
         0.0, 1.0, 0.0, 0.0, 0.0, 0.0
     ];
 
-    var canvas = document.getElementsByTagName('canvas')[0];
-    var w = [ 1920, 1920 ];
+    const canvas = document.getElementsByTagName('canvas')[0];
+    const size = Math.max(window.innerWidth, window.innerHeight);
+    const w = [size, size];
 
     canvas.width = w[0];
     canvas.height = w[1];
 
-    var gl = canvas.getContext('webgl');
+    const gl = canvas.getContext('webgl');
     gl.viewport( -w[0], -w[1], w[0] * 2, w[1] * 2 );
     gl.clearColor( 0.0, 0.0, 1.0, 1.0 );
 
     /**
      * @param {Number[]} sz vec2
+     * @param {number|GLenum} id
      * @param {string?} source
      * @constructor
      */
@@ -274,15 +276,24 @@
     var last = [ 0, 0 ];
     var mouse = [ 0, 0 ];
 
-    var active = false;
-    var timeout;
-    var layer2 = document.getElementById('layer-2');
-    layer2.addEventListener( 'mousemove', function( e ) {
-        clearTimeout( timeout );
+    let active = false;
+
+    let timeout;
+    const mouseHandler = e => {
+        clearTimeout(timeout);
 
         const rect = layer2.getBoundingClientRect();
-        const offsetX = e.clientX - rect.left;
-        const offsetY = e.clientY - rect.top;
+
+        let offsetX = e.clientX - rect.left;
+        let offsetY = e.clientY - rect.top;
+
+        if (e instanceof TouchEvent) {
+            const touch = e.touches[0];
+            offsetX = touch.pageX - rect.left;
+            offsetY = touch.pageY - rect.top;
+
+            active = true;
+        }
 
         const x =     offsetX / rect.height;
         const y = 1 - offsetY / rect.width;
@@ -291,8 +302,12 @@
         mouse[1] = y - last[1];
         last[0] = x;
         last[1] = y;
-        timeout = setTimeout( function() { mouse = [ 0, 0 ]; }, 25 );
-    }, false );
+        timeout = setTimeout(() => mouse = [ 0, 0 ], 25);
+    };
+
+    const layer2 = document.getElementById('layer-2');
+    layer2.addEventListener('mousemove', mouseHandler);
+    layer2.addEventListener('touchmove', mouseHandler);
 
     const info = document.getElementById('info');
     info.addEventListener('mousemove', () => active = true);
