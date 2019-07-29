@@ -287,7 +287,7 @@
         let offsetX = e.clientX - rect.left;
         let offsetY = e.clientY - rect.top;
 
-        if (e instanceof TouchEvent) {
+        if (window.TouchEvent && e instanceof TouchEvent) {
             const touch = e.touches[0];
             offsetX = touch.pageX - rect.left;
             offsetY = touch.pageY - rect.top;
